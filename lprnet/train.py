@@ -75,7 +75,7 @@ def train_lpr(resume=False):
     PATIENCE = 5
     DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     BASE_DIR = 'lpr_runs'
-    DATASET_ROOT = 'lpr_dataset5'
+    DATASET_ROOT = 'ccpd_plate_crop_dataset5'
     train_dir = os.path.join(DATASET_ROOT, 'train')
     val_dir = os.path.join(DATASET_ROOT, 'val')
 

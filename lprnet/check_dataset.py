@@ -31,4 +31,4 @@ def check_lpr_dataset(data_dir):
     return error_count == 0
 
 if __name__ == "__main__":
-    check_lpr_dataset("lpr_dataset2")  # 替换为你的数据集目录
+    check_lpr_dataset("ccpd_plate_crop_dataset2")  # 替换为你的数据集目录

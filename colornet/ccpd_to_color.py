@@ -83,7 +83,7 @@ def generate_augmented_data(src_dir, dst_dir, subset):
 
 
 if __name__ == "__main__":
-    LPR_ROOT = "../lprnet/lpr_dataset5"  # 原始蓝牌数据源
+    LPR_ROOT = "../lprnet/ccpd_plate_crop_dataset5"  # 原始蓝牌数据源
     DST_DIR = "./color_dataset5"  # 按颜色分类的目标目录
 
     for subset in ['train', 'val']:

@@ -94,7 +94,7 @@ def convert_ccpd_to_lpr(ccpd_root_list, save_root):
     process(val_files, 'val')
 
 # if __name__ == "__main__":
-#     convert_ccpd_to_lpr("../qwe", "lpr_dataset1")
+#     convert_ccpd_to_lpr("../qwe", "ccpd_plate_crop_dataset1")
 if __name__ == "__main__":
     # 【修改点】把两个路径放在一个列表里传进去
-    convert_ccpd_to_lpr(ccpd_root_list=["../qwertyu", "../zxcvbnm"], save_root="lpr_dataset5")
+    convert_ccpd_to_lpr(ccpd_root_list=["../qwertyu", "../zxcvbnm"], save_root="ccpd_plate_crop_dataset5")
