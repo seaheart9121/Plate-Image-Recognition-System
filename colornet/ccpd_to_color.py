@@ -97,7 +97,6 @@
 #     if not os.path.exists(LPR_ROOT):
 #         print(f"\n错误：未找到数据源 {LPR_ROOT}，请先运行 ../lprnet/ccpd_plate_crop.py")
 
-
 import cv2
 import numpy as np
 import os
@@ -105,103 +104,81 @@ from tqdm import tqdm
 import random
 
 
-def augment_to_yellow(img):
-    """
-    不失真的蓝牌/绿牌 → 黄牌转换
-    仅在 HSV 空间进行色相旋转，保留原始结构和字符清晰度
-    """
-    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV).astype(np.float32)
-
-    # 获取原始色相均值，判断是蓝牌还是绿牌
-    h_mean = np.mean(hsv[:, :, 0])
-
-    if h_mean > 100:  # 蓝牌 (约140°) → 黄牌 (约40°)，偏移 -100
-        hsv[:, :, 0] = (hsv[:, :, 0] + 80) % 180
-    else:  # 绿牌 (约90°) → 黄牌 (约40°)，偏移 -50
-        hsv[:, :, 0] = (hsv[:, :, 0] + 130) % 180
-
-    hsv[:, :, 1] = np.clip(hsv[:, :, 1] * 1.2, 0, 255)  # 适度增强饱和度
-    img_yellow = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR)
-
+# ==================== 代码2的黄牌生成：效果纯正 ====================
+def augment_blue_to_yellow(img):
+    """蓝牌→黄牌：像素反转 + 亮度调整，生成纯正的黄色车牌"""
+    img_yellow = cv2.bitwise_not(img)
+    img_yellow = cv2.convertScaleAbs(img_yellow, alpha=1.2, beta=10)
     return img_yellow
 
 
-def is_valid_plate(img):
-    """判断是否为有效车牌图像（非纯色、有内容）"""
+# ==================== 代码1的颜色判断：蓝绿留存足够多 ====================
+def get_plate_color(img):
+    """HSV颜色空间判断，精准区分蓝牌、绿牌"""
     h, w = img.shape[:2]
-    if h < 20 or w < 80:  # 尺寸太小
-        return False
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    std_val = np.std(gray)
-    return std_val > 30  # 标准差太小说明是纯色图，跳过
+    cy, cx = h // 2, w // 2
+    dh, dw = h // 5, w // 5
+    roi = img[cy - dh:cy + dh, cx - dw:cx + dw]
+    hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+    h_mean = np.mean(hsv[..., 0])
+
+    if 100 <= h_mean <= 140:
+        return "blue"
+    elif 40 <= h_mean <= 90:
+        return "green"
+    else:
+        return "unknown"
 
 
-def generate_yellow_from_mixed(src_dir, dst_dir, subset, yellow_ratio=0.3):
-    """
-    从混合蓝牌/绿牌数据集中，随机选取一部分转换成黄牌
+# ==================== 主处理函数 ====================
+def process_folder(src_dir, save_dir, yellow_ratio=0.1):
+    blue_dir = os.path.join(save_dir, "blue")
+    green_dir = os.path.join(save_dir, "green")
+    yellow_dir = os.path.join(save_dir, "yellow")
+    os.makedirs(blue_dir, exist_ok=True)
+    os.makedirs(green_dir, exist_ok=True)
+    os.makedirs(yellow_dir, exist_ok=True)
 
-    Args:
-        src_dir: 源目录（包含蓝牌和绿牌）
-        dst_dir: 目标目录
-        subset: 'train' 或 'val'
-        yellow_ratio: 转换成黄牌的比例（默认30%）
-    """
-    os.makedirs(os.path.join(dst_dir, 'blue'), exist_ok=True)
-    os.makedirs(os.path.join(dst_dir, 'green'), exist_ok=True)
-    os.makedirs(os.path.join(dst_dir, 'yellow'), exist_ok=True)
+    files = [f for f in os.listdir(src_dir) if f.lower().endswith(('.jpg', '.png'))]
 
-    print(f"生成黄牌增强数据: {src_dir} -> {dst_dir}")
-
-    all_files = [f for f in os.listdir(src_dir) if f.lower().endswith(('.jpg', '.png'))]
-
-    for filename in tqdm(all_files, desc=f"处理 {subset}"):
-        if '_yellow_' in filename:
-            continue
-
-        img_path = os.path.join(src_dir, filename)
+    for fname in tqdm(files):
+        img_path = os.path.join(src_dir, fname)
         img = cv2.imdecode(np.fromfile(img_path, dtype=np.uint8), cv2.IMREAD_COLOR)
         if img is None:
             continue
 
-        if not is_valid_plate(img):
-            continue
+        color = get_plate_color(img)
 
-        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-        h_mean = np.mean(hsv[:, :, 0])
+        # 1. 保存
+        if color == "blue":
+            cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 100])[1].tofile(
+                os.path.join(blue_dir, fname)
+            )
+        elif color == "green":
+            cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 100])[1].tofile(
+                os.path.join(green_dir, fname)
+            )
 
-        # 随机决定是否转换为黄牌
-        if random.random() < yellow_ratio:
-            # 转换为黄牌
-            img_yellow = augment_to_yellow(img)
-            yellow_filename = f"yellow_{filename}"
-            yellow_dst = os.path.join(dst_dir, 'yellow', yellow_filename)
-            cv2.imencode('.jpg', img_yellow)[1].tofile(yellow_dst)
-
-        # 同时保留原始图片到对应颜色目录
-        if h_mean > 100:  # 蓝牌
-            blue_dst = os.path.join(dst_dir, 'blue', filename)
-            cv2.imencode('.jpg', img)[1].tofile(blue_dst)
-        else:  # 绿牌
-            green_dst = os.path.join(dst_dir, 'green', filename)
-            cv2.imencode('.jpg', img)[1].tofile(green_dst)
+        # 2. 蓝牌转黄牌
+        if color == "blue" and random.random() < yellow_ratio:
+            y_img = augment_blue_to_yellow(img)
+            y_name = f"yellow_{fname}"
+            cv2.imencode('.jpg', y_img, [cv2.IMWRITE_JPEG_QUALITY, 100])[1].tofile(
+                os.path.join(yellow_dir, y_name)
+            )
 
 
+# ==================== 运行入口 ====================
 if __name__ == "__main__":
-    # 输入：混合蓝牌/绿牌的 LPRNet 裁剪数据集
-    LPR_ROOT = "./lprnet/ccpd_plate_crop_dataset5"
-    # 输出：颜色分类数据集（蓝、绿、黄）
-    DST_DIR = "./ccpd_plate_crop_color_dataset5"
+    LPR_ROOT = "../lprnet/ccpd_plate_crop_dataset4"
+    SAVE_ROOT = "./color_dataset4"
 
-    # 转换成黄牌的比例（0.3 = 30%的图片会被额外生成一张黄牌）
-    YELLOW_RATIO = 0.3
-
-    for subset in ['train', 'val']:
-        src_dir = os.path.join(LPR_ROOT, subset)
-        if os.path.exists(src_dir):
-            print(f"\n===== 处理 {subset} 集 =====")
-            generate_yellow_from_mixed(src_dir, DST_DIR, subset, yellow_ratio=YELLOW_RATIO)
+    for subset in ["train", "val"]:
+        src = os.path.join(LPR_ROOT, subset)
+        if os.path.exists(src):
+            print(f"\n处理 {subset} ...")
+            process_folder(src, SAVE_ROOT, yellow_ratio=0.1)
         else:
-            print(f"\n跳过 {subset} 集（目录不存在: {src_dir}）")
+            print(f"跳过不存在的目录: {src}")
 
-    if not os.path.exists(LPR_ROOT):
-        print(f"\n错误：未找到数据源 {LPR_ROOT}，请先运行 ccpd_plate_crop.py")
+    print("\n✅ 完成！")
