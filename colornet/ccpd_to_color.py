@@ -69,21 +69,21 @@ def generate_augmented_data(src_dir, dst_dir, subset):
         green_dst = os.path.join(dst_dir, 'green', green_filename)
         cv2.imencode('.jpg', img_green)[1].tofile(green_dst)
 
-        # 3. （可选）保存回lpr_dataset（用于LPRNet训练）
-        parts = filename.split('_', 1)  # 兼容任意文件名格式（只拆分第一个下划线）
-        if len(parts) == 2:
-            label, rest = parts
-            yellow_lpr = f"{label}_yellow_{rest}"
-            green_lpr = f"{label}_green_{rest}"
-        else:
-            yellow_lpr = f"yellow_{filename}"
-            green_lpr = f"green_{filename}"
-        cv2.imencode('.jpg', img_yellow)[1].tofile(os.path.join(src_dir, yellow_lpr))
-        cv2.imencode('.jpg', img_green)[1].tofile(os.path.join(src_dir, green_lpr))
+        # # 3. （可选）保存回lpr_dataset（用于LPRNet训练）
+        # parts = filename.split('_', 1)  # 兼容任意文件名格式（只拆分第一个下划线）
+        # if len(parts) == 2:
+        #     label, rest = parts
+        #     yellow_lpr = f"{label}_yellow_{rest}"
+        #     green_lpr = f"{label}_green_{rest}"
+        # else:
+        #     yellow_lpr = f"yellow_{filename}"
+        #     green_lpr = f"green_{filename}"
+        # cv2.imencode('.jpg', img_yellow)[1].tofile(os.path.join(src_dir, yellow_lpr))
+        # cv2.imencode('.jpg', img_green)[1].tofile(os.path.join(src_dir, green_lpr))
 
 
 if __name__ == "__main__":
-    LPR_ROOT = "../lprnet/ccpd_plate_crop_dataset5"  # 原始蓝牌数据源
+    LPR_ROOT = "./ccpd_plate_crop_color_dataset5"  # 原始蓝牌数据源
     DST_DIR = "./color_dataset5"  # 按颜色分类的目标目录
 
     for subset in ['train', 'val']:
