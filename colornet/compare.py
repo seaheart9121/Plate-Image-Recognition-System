@@ -23,7 +23,7 @@ MODEL_PATHS: list[PathType] = [
     "./color_runs/exp5/color_best.pth"
 ]
 
-TEST_DATASET: PathType = "./color_dataset5"  # 你的测试集路径
+TEST_DATASET: PathType = "./color_dataset4"  # 你的测试集路径
 
 
 def test_model_accuracy(model_path: PathType, test_loader: torch.utils.data.DataLoader, device: torch.device) -> float:

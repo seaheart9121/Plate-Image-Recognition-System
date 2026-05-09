@@ -148,7 +148,7 @@ class ParkingSystem(tk.Tk):
         self.car_tree.column("车牌号码", width=100, anchor=tk.CENTER)
         self.car_tree.column("入场时间", width=150, anchor=tk.CENTER)
         self.car_tree.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-
+        self.car_tree.bind('<ButtonRelease-1>', self.on_car_select)
         self.log_frame = tk.LabelFrame(self, text="操作日志", font=("宋体", 10))
         self.log_frame.pack(fill=tk.X, padx=10, pady=5, ipady=5)
         self.log_text = tk.Text(self.log_frame, height=5, font=("宋体", 9))
@@ -406,6 +406,19 @@ class ParkingSystem(tk.Tk):
             self.preview_tip.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
         else:
             messagebox.showwarning("失败", msg)
+
+    def on_car_select(self, event):
+        """右侧在场车辆列表点击事件：选中的车牌自动填入，并启用出场按钮"""
+        selection = self.car_tree.selection()
+        if not selection:
+            return
+        # 获取选中行的 values：["车位ID", "车牌号码", "入场时间"]
+        values = self.car_tree.item(selection[0], 'values')
+        if values and len(values) >= 2:
+            plate = values[1]  # 车牌号码在第2列
+            self.current_plate.set(plate)  # 更新左侧识别结果显示
+            self.entry_btn.config(state=tk.NORMAL)
+            self.exit_btn.config(state=tk.NORMAL)
 
     def set_rate(self):
         new_rate = askfloat("费率设置", "请输入每小时收费标准（元）：", initialvalue=self.data_util.hour_rate, minvalue=0)
