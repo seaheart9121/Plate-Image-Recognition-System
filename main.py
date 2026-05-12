@@ -11,12 +11,13 @@ from datetime import datetime
 import threading
 import cv2
 import os
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, ImageDraw, ImageFont
 
 from opencvutil import OpenCVUtil
 from ocrutil import OCRUtil
 from datautil import DataUtil
 
+# 解决matplotlib中文显示问题
 matplotlib.rcParams["font.sans-serif"] = ["SimHei"]
 matplotlib.rcParams["axes.unicode_minus"] = False
 
@@ -91,8 +92,8 @@ class ParkingSystem(tk.Tk):
         self.capture_btn.pack(pady=3)
         self.import_btn = ttk.Button(self.operate_frame, text="本地导入图片", command=self.import_image, width=20)
         self.import_btn.pack(pady=3)
-        self.local_recognize_btn = ttk.Button(self.operate_frame, text="本地识别车牌", command=self.local_recognize,width=20)
-        self.local_recognize_btn.pack(pady=3)
+        self.cloud_recognize_btn = ttk.Button(self.operate_frame, text="云端识别车牌", command=self.cloud_recognize,width=20)
+        self.cloud_recognize_btn.pack(pady=3)
         self.manual_btn = ttk.Button(self.operate_frame, text="手动录入车牌", command=self.manual_input, width=20)
         self.manual_btn.pack(pady=3)
 
@@ -111,8 +112,6 @@ class ParkingSystem(tk.Tk):
         self.rate_btn = ttk.Button(self.operate_frame, text="费率设置", command=self.set_rate, width=20)
         self.rate_btn.pack(pady=3)
 
-        # 新增：增加车位按钮
-        # 替换为新的按钮
         self.manage_spaces_btn = ttk.Button(self.operate_frame, text="车位管理", command=self.manage_parking_spaces, width=20)
         self.manage_spaces_btn.pack(pady=3)
 
@@ -126,12 +125,10 @@ class ParkingSystem(tk.Tk):
         self.fee_chart_btn = ttk.Button(self.operate_frame, text="收入统计图表", command=self.show_fee_chart, width=20)
         self.fee_chart_btn.pack(pady=3)
 
-        # 改造：实时预览与识别区（替换原有静态label为canvas）
         self.preview_frame = tk.LabelFrame(self.main_frame, text="实时预览与识别区", font=("宋体", 10))
         self.preview_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5)
         self.preview_canvas = tk.Canvas(self.preview_frame, background="#f0f0f0")
         self.preview_canvas.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        # 新增提示文字（无内容时显示）
         self.preview_tip = ttk.Label(
             self.preview_canvas,
             text="\n1. 点击「摄像头抓拍」可实时预览摄像头画面\n2. 抓拍/导入图片后将显示图片+识别结果",
@@ -151,16 +148,14 @@ class ParkingSystem(tk.Tk):
         self.car_tree.column("车牌号码", width=100, anchor=tk.CENTER)
         self.car_tree.column("入场时间", width=150, anchor=tk.CENTER)
         self.car_tree.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-
+        self.car_tree.bind('<ButtonRelease-1>', self.on_car_select)
         self.log_frame = tk.LabelFrame(self, text="操作日志", font=("宋体", 10))
         self.log_frame.pack(fill=tk.X, padx=10, pady=5, ipady=5)
         self.log_text = tk.Text(self.log_frame, height=5, font=("宋体", 9))
         self.log_text.pack(fill=tk.X, padx=5)
         self.log_text.config(state=tk.DISABLED)
 
-    # 新增：实时显示摄像头画面
     def start_camera_preview(self):
-        """在预览区实时显示摄像头画面"""
         if not self.opencv_util.cam.isOpened():
             self.add_log("摄像头预览失败：摄像头未打开")
             return
@@ -168,97 +163,75 @@ class ParkingSystem(tk.Tk):
         def update_frame():
             ret, frame = self.opencv_util.cam.read()
             if ret:
-                # 转换颜色空间（OpenCV BGR → PIL RGB）
                 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                # 调整画面大小适配预览区
                 canvas_width = self.preview_canvas.winfo_width()
                 canvas_height = self.preview_canvas.winfo_height()
-                if canvas_width <= 1 or canvas_height <= 1:  # 避免初始化时尺寸为0
+                if canvas_width <= 1 or canvas_height <= 1:
                     canvas_width, canvas_height = 640, 480
 
-                # 等比例缩放图片
                 img = Image.fromarray(frame_rgb)
                 img.thumbnail((canvas_width, canvas_height), Image.Resampling.LANCZOS)
-                # 转换为tkinter可用的格式
                 self.preview_img = ImageTk.PhotoImage(image=img)
 
-                # 清空画布并显示新画面
                 self.preview_canvas.delete("all")
                 self.preview_canvas.create_image(
                     canvas_width / 2, canvas_height / 2,
                     image=self.preview_img, anchor=tk.CENTER
                 )
-                # 持续刷新（10ms/帧）
                 self.preview_after_id = self.after(10, update_frame)
             else:
                 self.add_log("摄像头预览失败：无法读取画面")
 
-        # 先隐藏提示文字
         self.preview_tip.place_forget()
-        # 启动帧刷新
         update_frame()
 
-    # 新增：停止摄像头预览
     def stop_camera_preview(self):
-        """停止预览并清空画布"""
         if hasattr(self, 'preview_after_id'):
             self.after_cancel(self.preview_after_id)
         self.preview_canvas.delete("all")
-        # 恢复提示文字
         self.preview_tip.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
 
-    # 新增：预览抓拍/导入的图片 + 叠加识别结果
     def show_image_preview(self, img_path, plate_num=""):
-        """显示图片预览，并叠加识别到的车牌文字"""
         if not os.path.exists(img_path):
             self.add_log(f"图片预览失败：{img_path}不存在")
             return
 
-        # 读取图片并转换格式
         img = cv2.imread(img_path)
         img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-        # 适配预览区尺寸
         canvas_width = self.preview_canvas.winfo_width()
         canvas_height = self.preview_canvas.winfo_height()
         if canvas_width <= 1 or canvas_height <= 1:
             canvas_width, canvas_height = 640, 480
 
-        # 等比例缩放
         pil_img = Image.fromarray(img_rgb)
         pil_img.thumbnail((canvas_width, canvas_height), Image.Resampling.LANCZOS)
 
-        # 叠加识别结果文字（如果有）
         if plate_num and plate_num != "未识别车牌":
             draw = ImageDraw.Draw(pil_img)
-            # 设置文字样式（兼容不同系统字体）
             try:
                 font = ImageFont.truetype("simhei.ttf", 24)
-            except:
+            except Exception as e:
+                self.add_log(f"加载字体失败，使用默认字体：{e}")
                 font = ImageFont.load_default(size=24)
-            # 计算文字位置（底部居中，加背景）
             text = f"识别结果：{plate_num}"
             text_bbox = draw.textbbox((0, 0), text, font=font)
             text_width = text_bbox[2] - text_bbox[0]
             text_height = text_bbox[3] - text_bbox[1]
             text_x = (pil_img.width - text_width) // 2
             text_y = pil_img.height - text_height - 10
-            # 绘制文字背景（半透明黑）
             draw.rectangle(
                 [text_x - 5, text_y - 5, text_x + text_width + 5, text_y + text_height + 5],
-                fill=(0, 0, 0, 128)  # 黑色半透明
+                fill=(0, 0, 0, 128)
             )
-            # 绘制白色文字
             draw.text((text_x, text_y), text, fill=(255, 255, 255), font=font)
 
-        # 转换为tkinter格式并显示
         self.preview_img = ImageTk.PhotoImage(image=pil_img)
         self.preview_canvas.delete("all")
         self.preview_canvas.create_image(
             canvas_width / 2, canvas_height / 2,
             image=self.preview_img, anchor=tk.CENTER
         )
-        # 隐藏提示文字
         self.preview_tip.place_forget()
 
     def refresh_system_time(self):
@@ -297,16 +270,12 @@ class ParkingSystem(tk.Tk):
         self.log_text.insert(tk.END, "".join(self.log_list))
         self.log_text.config(state=tk.DISABLED)
 
-    # 改造：摄像头抓拍集成实时预览
     def capture_plate(self):
         def task():
             try:
                 self.add_log("开始摄像头抓拍...")
-                # 启动实时预览
                 self.after(0, self.start_camera_preview)
-                # 调用抓拍方法
                 img_path, msg = self.opencv_util.capture_plate()
-                # 停止预览
                 self.after(0, self.stop_camera_preview)
                 self.add_log(msg)
 
@@ -314,15 +283,13 @@ class ParkingSystem(tk.Tk):
                     self.current_img_path = img_path
                     pre_path, pre_msg = self.opencv_util.preprocess_image(img_path)
                     self.add_log(pre_msg)
-                    # 百度OCR用原始图，本地OCR用预处理图
-                    plate_num, ocr_msg = self.ocr_util.full_recognize_process(img_path, self)
+                    plate_num, ocr_msg = self.ocr_util.full_recognize_process(img_path, self, use_baidu=False)
                     self.add_log(ocr_msg)
 
                     if plate_num:
                         self.after(0, lambda: self.current_plate.set(plate_num))
                         self.after(0, lambda: self.entry_btn.config(state=tk.NORMAL))
                         self.after(0, lambda: self.exit_btn.config(state=tk.NORMAL))
-                    # 预览抓拍的图片 + 识别结果
                     self.after(0, lambda: self.show_image_preview(img_path, plate_num))
             except Exception as e:
                 self.add_log(f"抓拍异常：{str(e)}")
@@ -334,44 +301,8 @@ class ParkingSystem(tk.Tk):
 
         threading.Thread(target=task, daemon=True).start()
 
-    # 改造：本地导入图片集成预览功能
-    # def import_image(self):
-    #     try:
-    #         # 强制清理所有OpenCV残留，防止冲突
-    #         cv2.destroyAllWindows()
-    #
-    #         img_path = filedialog.askopenfilename(
-    #             title="选择车牌图片",
-    #             filetypes=[("图片文件", "*.jpg;*.png;*.jpeg;*.bmp")]
-    #         )
-    #         if not img_path:
-    #             return
-    #
-    #         self.add_log(f"导入图片：{img_path}")
-    #         self.current_img_path = img_path
-    #
-    #         # 重新加载，避免缓存问题
-    #         pre_path, pre_msg = self.opencv_util.preprocess_image(img_path)
-    #         self.add_log(pre_msg)
-    #
-    #         # 百度OCR用原始图，本地OCR用预处理图
-    #         plate_num, ocr_msg = self.ocr_util.full_recognize_process(img_path, self)
-    #         self.add_log(ocr_msg)
-    #
-    #         if plate_num:
-    #             self.current_plate.set(plate_num)
-    #             self.entry_btn.config(state=tk.NORMAL)
-    #             self.exit_btn.config(state=tk.NORMAL)
-    #
-    #         # 预览导入的图片 + 识别结果
-    #         self.show_image_preview(img_path, plate_num)
-    #
-    #     except Exception as e:
-    #         self.add_log(f"导入失败：{str(e)}")
-    #         messagebox.showerror("错误", f"导入图片失败：{str(e)}")
     def import_image(self):
         try:
-            # 强制清理所有OpenCV残留，防止冲突
             cv2.destroyAllWindows()
 
             img_path = filedialog.askopenfilename(
@@ -384,12 +315,10 @@ class ParkingSystem(tk.Tk):
             self.add_log(f"导入图片：{img_path}")
             self.current_img_path = img_path
 
-            # 重新加载，避免缓存问题
             pre_path, pre_msg = self.opencv_util.preprocess_image(img_path)
             self.add_log(pre_msg)
 
-            # 核心修改：use_baidu=True 强制使用百度OCR
-            plate_num, ocr_msg = self.ocr_util.full_recognize_process(img_path, self, use_baidu=True)
+            plate_num, ocr_msg = self.ocr_util.full_recognize_process(img_path, self, use_baidu=False)
             self.add_log(ocr_msg)
 
             if plate_num and plate_num != "未识别车牌":
@@ -401,47 +330,40 @@ class ParkingSystem(tk.Tk):
                 self.entry_btn.config(state=tk.DISABLED)
                 self.exit_btn.config(state=tk.DISABLED)
 
-            # 预览导入的图片 + 识别结果
             self.show_image_preview(img_path, plate_num)
 
         except Exception as e:
             self.add_log(f"导入失败：{str(e)}")
             messagebox.showerror("错误", f"导入图片失败：{str(e)}")
 
-    # local_recognize 函数
-    def local_recognize(self):
-        """本地识别车牌：替代百度OCR，使用本地模型识别已导入的图片"""
-        # 1. 检查是否已导入图片
+    def cloud_recognize(self):
         if not self.current_img_path:
             messagebox.showwarning("警告", "请先点击「本地导入图片」选择要识别的图片！")
             return
 
-        # 2. 调用本地OCR识别（use_baidu=False）
         try:
-            self.add_log("开始本地模型识别车牌...")
+            self.add_log("开始云端OCR识别车牌...")
             plate_num, ocr_msg = self.ocr_util.full_recognize_process(
                 self.current_img_path,
                 self,
-                use_baidu=False  # 强制使用本地识别
+                use_baidu=True
             )
             self.add_log(ocr_msg)
 
-            # 3. 更新识别结果和UI状态
             if plate_num and plate_num != "未识别车牌":
                 self.current_plate.set(plate_num)
                 self.entry_btn.config(state=tk.NORMAL)
                 self.exit_btn.config(state=tk.NORMAL)
-                # 更新预览区的识别结果
                 self.show_image_preview(self.current_img_path, plate_num)
             else:
                 self.current_plate.set("未识别车牌")
                 self.entry_btn.config(state=tk.DISABLED)
                 self.exit_btn.config(state=tk.DISABLED)
-                messagebox.showinfo("提示", "本地识别未检测到有效车牌！")
+                messagebox.showinfo("提示", "云端OCR未识别到有效车牌！")
 
         except Exception as e:
-            self.add_log(f"本地识别失败：{str(e)}")
-            messagebox.showerror("错误", f"本地识别异常：{str(e)}")
+            self.add_log(f"云端识别失败：{str(e)}")
+            messagebox.showerror("错误", f"云端识别异常：{str(e)}")
 
     def manual_input(self):
         plate_num, msg = self.ocr_util.manual_input_plate(self)
@@ -450,7 +372,6 @@ class ParkingSystem(tk.Tk):
             self.add_log(msg)
             self.entry_btn.config(state=tk.NORMAL)
             self.exit_btn.config(state=tk.NORMAL)
-            # 如果有已导入/抓拍的图片，更新预览区的识别结果
             if self.current_img_path:
                 self.show_image_preview(self.current_img_path, plate_num)
 
@@ -477,16 +398,27 @@ class ParkingSystem(tk.Tk):
         if success:
             messagebox.showinfo("成功", msg)
             self.refresh_parking_data()
-            # 修复：确保重置所有关联状态
             self.current_plate.set("未识别车牌")
-            self.current_img_path = None  # 清空图片路径
+            self.current_img_path = None
             self.entry_btn.config(state=tk.DISABLED)
             self.exit_btn.config(state=tk.DISABLED)
-            # 清空预览区并恢复提示文字
             self.stop_camera_preview()
             self.preview_tip.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
         else:
             messagebox.showwarning("失败", msg)
+
+    def on_car_select(self, event):
+        """右侧在场车辆列表点击事件：选中的车牌自动填入，并启用出场按钮"""
+        selection = self.car_tree.selection()
+        if not selection:
+            return
+        # 获取选中行的 values：["车位ID", "车牌号码", "入场时间"]
+        values = self.car_tree.item(selection[0], 'values')
+        if values and len(values) >= 2:
+            plate = values[1]  # 车牌号码在第2列
+            self.current_plate.set(plate)  # 更新左侧识别结果显示
+            self.entry_btn.config(state=tk.NORMAL)
+            self.exit_btn.config(state=tk.NORMAL)
 
     def set_rate(self):
         new_rate = askfloat("费率设置", "请输入每小时收费标准（元）：", initialvalue=self.data_util.hour_rate, minvalue=0)
@@ -496,16 +428,11 @@ class ParkingSystem(tk.Tk):
             messagebox.showinfo("成功", f"费率已设置为{new_rate}元/小时")
 
     def manage_parking_spaces(self):
-        """车位管理弹窗：同时支持增加和删除车位"""
-        from tkinter import ttk, messagebox
-        from tkinter.simpledialog import askinteger, askstring
-
         manage_win = tk.Toplevel(self)
         manage_win.title("车位管理")
         manage_win.geometry("400x300")
         manage_win.resizable(False, False)
 
-        # 增加车位区域
         add_frame = tk.LabelFrame(manage_win, text="增加车位", font=("宋体", 10, "bold"))
         add_frame.pack(fill=tk.X, padx=10, pady=10)
 
@@ -517,7 +444,7 @@ class ParkingSystem(tk.Tk):
         def do_add():
             count = add_count_var.get()
             if count <= 0:
-                messagebox.showwarning("提示", "请输入大于0的数量！")
+                messagebox.showwarning("提示", "请输入大于0的整数！")
                 return
             success, msg = self.data_util.add_parking_spaces(count)
             self.add_log(msg)
@@ -530,7 +457,6 @@ class ParkingSystem(tk.Tk):
 
         ttk.Button(add_frame, text="确认增加", command=do_add).grid(row=0, column=2, padx=10, pady=5)
 
-        # 删除车位区域
         remove_frame = tk.LabelFrame(manage_win, text="删除车位", font=("宋体", 10, "bold"))
         remove_frame.pack(fill=tk.X, padx=10, pady=10)
 
@@ -556,12 +482,12 @@ class ParkingSystem(tk.Tk):
 
         ttk.Button(remove_frame, text="确认删除", command=do_remove).grid(row=0, column=2, padx=10, pady=5)
 
-        # 提示信息
         tip_label = ttk.Label(manage_win, text="注意：删除的车位必须是空闲状态！", foreground="red")
         tip_label.pack(pady=10)
 
         manage_win.mainloop()
 
+    # 修复1：MySQL版记录查询（不再读Excel，直接从DataUtil查）
     def query_record(self):
         query_win = tk.Toplevel(self)
         query_win.title("停车记录查询")
@@ -572,9 +498,23 @@ class ParkingSystem(tk.Tk):
             tree.heading(col, text=col)
             tree.column(col, anchor=tk.CENTER, width=150)
         tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        record_df = pd.read_excel(self.data_util.excel_path, sheet_name="车辆记录")
-        for _, row in record_df.iterrows():
-            tree.insert("", tk.END, values=row.tolist())
+
+        # 从MySQL查询所有车辆记录
+        conn, cursor = self.data_util.get_conn()
+        cursor.execute("SELECT plate_num, entry_time, exit_time, space_id, park_status FROM car_record")
+        records = cursor.fetchall()
+        self.data_util.close(conn, cursor)
+
+        for row in records:
+            # 处理空值（未出场的车exit_time为空）
+            exit_time = row["exit_time"].strftime("%Y-%m-%d %H:%M:%S") if row["exit_time"] else ""
+            tree.insert("", tk.END, values=[
+                row["plate_num"],
+                row["entry_time"].strftime("%Y-%m-%d %H:%M:%S"),
+                exit_time,
+                row["space_id"],
+                row["park_status"]
+            ])
 
     def show_space_chart(self):
         chart_win = tk.Toplevel(self)
@@ -591,47 +531,106 @@ class ParkingSystem(tk.Tk):
         ax.axis("equal")
         canvas = FigureCanvasTkAgg(fig, master=chart_win)
         canvas.draw()
-        canvas.get_widget().pack(fill=tk.BOTH, expand=True)
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+    # # 修复2：MySQL版收入统计图表（不再读Excel，直接从MySQL查）
+    # def show_fee_chart(self):
+    #     chart_win = tk.Toplevel(self)
+    #     chart_win.title("收入统计图表")
+    #     chart_win.geometry("800x500")
+    #
+    #     # 从MySQL查询收费记录
+    #     conn, cursor = self.data_util.get_conn()
+    #     cursor.execute("SELECT plate_num, park_duration, fee, entry_time, exit_time, fee_time FROM fee_record")
+    #     fee_records = cursor.fetchall()
+    #     self.data_util.close(conn, cursor)
+    #
+    #     if len(fee_records) == 0:
+    #         messagebox.showwarning("提示", "暂无收费数据！")
+    #         chart_win.destroy()
+    #         return
+    #
+    #     # 转成DataFrame做统计
+    #     fee_df = pd.DataFrame(fee_records)
+    #     fee_df["收费日期"] = pd.to_datetime(fee_df["fee_time"]).dt.date
+    #     daily_fee = fee_df.groupby("收费日期")["fee"].sum()
+    #
+    #     fig = Figure(figsize=(8, 5), dpi=100)
+    #     ax = fig.add_subplot(111)
+    #     daily_fee.plot(kind="bar", ax=ax, color="#66b3ff")
+    #     ax.set_title("每日收入统计")
+    #     ax.set_xlabel("日期")
+    #     ax.set_ylabel("收入（元）")
+    #     ax.grid(axis="y", linestyle="--", alpha=0.7)
+    #     fig.tight_layout()
+    #     canvas = FigureCanvasTkAgg(fig, master=chart_win)
+    #     canvas.draw()
+    #     canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
     def show_fee_chart(self):
+        """收入图表"""
         chart_win = tk.Toplevel(self)
         chart_win.title("收入统计图表")
         chart_win.geometry("800x500")
-        fee_df = pd.read_excel(self.data_util.excel_path, sheet_name="收费记录")
-        if len(fee_df) == 0:
+
+        # 1. 查数据
+        conn, cursor = self.data_util.get_conn()
+        cursor.execute("SELECT plate_num, park_duration, fee, entry_time, exit_time, fee_time FROM fee_record")
+        fee_records = cursor.fetchall()
+        self.data_util.close(conn, cursor)
+
+        if len(fee_records) == 0:
             messagebox.showwarning("提示", "暂无收费数据！")
             chart_win.destroy()
             return
-        fee_df["收费日期"] = pd.to_datetime(fee_df["收费时间"]).dt.date
-        daily_fee = fee_df.groupby("收费日期")["收费金额(元)"].sum()
-        fig = Figure(figsize=(8, 5), dpi=100)
-        ax = fig.add_subplot(111)
-        daily_fee.plot(kind="bar", ax=ax, color="#66b3ff")
-        ax.set_title("每日收入统计")
-        ax.set_xlabel("日期")
-        ax.set_ylabel("收入（元）")
-        ax.grid(axis="y", linestyle="--", alpha=0.7)
-        fig.tight_layout()
-        canvas = FigureCanvasTkAgg(fig, master=chart_win)
-        canvas.draw()
-        canvas.get_widget().pack(fill=tk.BOTH, expand=True)
 
-    # 改造：关闭时停止预览
+        # 2. 强行构造可绘图数据（终极保险）
+        try:
+            fee_df = pd.DataFrame(fee_records)
+            # 只保留我们需要的列，防止列名不对
+            fee_df = fee_df[["fee", "fee_time"]].copy()
+
+            # 强制转数字，不行就填0
+            fee_df["fee"] = pd.to_numeric(fee_df["fee"], errors="coerce").fillna(0)
+            # 强制转时间
+            fee_df["fee_time"] = pd.to_datetime(fee_df["fee_time"], errors="coerce")
+            # 去掉无效行
+            fee_df = fee_df.dropna()
+            # 只保留有收入的
+            fee_df = fee_df[fee_df["fee"] > 0]
+
+            if len(fee_df) == 0:
+                messagebox.showwarning("提示", "暂无有效收费数据！")
+                chart_win.destroy()
+                return
+
+            # 3. 分组绘图
+            fee_df["收费日期"] = fee_df["fee_time"].dt.date
+            daily_fee = fee_df.groupby("收费日期")["fee"].sum()
+
+            fig = Figure(figsize=(8, 5), dpi=100)
+            ax = fig.add_subplot(111)
+            daily_fee.plot(kind="bar", ax=ax, color="#66b3ff")
+            ax.set_title("每日收入统计")
+            ax.set_xlabel("日期")
+            ax.set_ylabel("收入（元）")
+            ax.grid(axis="y", linestyle="--", alpha=0.7)
+            fig.tight_layout()
+
+            canvas = FigureCanvasTkAgg(fig, master=chart_win)
+            canvas.draw()
+            canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+        except Exception as e:
+            messagebox.showerror("提示", f"暂无有效收费数据可绘制\n错误：{str(e)}")
+            chart_win.destroy()
+
     def on_closing(self):
         self.opencv_util.release_cam()
-        self.stop_camera_preview()  # 停止预览
+        self.stop_camera_preview()
         self.add_log("程序即将退出")
         if messagebox.askokcancel("退出", "确定要退出系统吗？"):
             self.destroy()
-
-
-# 补充PIL依赖导入（避免遗漏）
-try:
-    from PIL import ImageDraw, ImageFont
-except ImportError:
-    from PIL import ImageDraw
-
-    ImageFont = None
 
 if __name__ == "__main__":
     app = ParkingSystem()

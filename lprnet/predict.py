@@ -95,4 +95,4 @@ def predict_all_exps(img_path):
         print(f"  最优预测：{best_item[1]}（置信度 {best_item[2]}%）")
 
 if __name__ == "__main__":
-    predict_all_exps("./test_plate4.jpg")
+    predict_all_exps("./浙BD1111.png")

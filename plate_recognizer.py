@@ -70,7 +70,8 @@ class PlateRecognitionModel:
             print("YOLO模型加载完成")
 
             # 2. LPRNet 模型加载
-            local_lpr = 'lpr_runs/lprnet_best.pth'
+            # local_lpr = 'lpr_runs/lprnet_best.pth'
+            local_lpr = 'lprnet/lpr_runs/exp5/lprnet_best.pth'
             if os.path.exists(local_lpr):
                 self.lpr_path = local_lpr
             else:
@@ -86,7 +87,8 @@ class PlateRecognitionModel:
                 self.lpr_model = None
 
             # 3. ColorNet 模型加载
-            local_color = 'color_runs/color_best.pth'
+            # local_color = 'color_runs/color_best.pth'
+            local_color = 'colornet/color_runs/exp2/color_best.pth'
             if os.path.exists(local_color):
                 self.color_path = local_color
             else:

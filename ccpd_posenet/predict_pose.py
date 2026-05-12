@@ -82,8 +82,8 @@ def predict_and_rectify(model_path, image_path, output_dir='output_rectified'):
 
 if __name__ == "__main__":
     # ========== 请修改这里的路径 ==========
-    MODEL_PATH = '../ccpd_pose_runs/exp6/weights/best.pt'  # 你的训练模型路径
-    TEST_IMG = '../file/car4.jpg'  # 你的测试图片路径
+    MODEL_PATH = '../ccpd_pose_runs/exp7/weights/best.pt'  # 你的训练模型路径
+    TEST_IMG = '../file/car3.jpg'  # 你的测试图片路径
     # =====================================
 
     # 步骤1：校验模型路径
