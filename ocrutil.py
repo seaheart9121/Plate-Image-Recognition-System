@@ -8,7 +8,7 @@ import os
 class OCRUtil:
     def __init__(self):
         # 百度OCR配置（已填入你截图中的真实密钥，无需修改）
-        self.APP_ID = "121576563"
+        self.APP_ID = ""
         self.API_KEY = "JiXaJ9IEmh5edjVKFurkM7SN"
         self.SECRET_KEY = "9YaKfrNk7JWmi6sNSEfiCPo9In93U6WR"
         self.baidu_client = AipOcr(self.APP_ID, self.API_KEY, self.SECRET_KEY)
