@@ -73,7 +73,6 @@ class OCRUtil:
     #         return None, f"本地OCR识别失败：{str(e)}"
     def full_recognize_process(self, img_path, ui_obj=None, use_baidu=False):
         """
-        对外接口完全不变！main.py里的调用一行都不用改！
         :param img_path: 图片路径
         :param ui_obj: UI对象（用于更新进度条等，可选）
         :param use_baidu: 是否使用百度OCR（默认False用本地）
@@ -98,8 +97,7 @@ class OCRUtil:
                     ocr_msg = baidu_msg  # 复用百度返回的错误信息
                 return plate_num, ocr_msg
             else:
-                # ========== 【新增/修改】本地OCR分支（调用plate_recognizer，无重复预处理） ==========
-                # 检查plate_recognizer是否已初始化（如果没有，在这里补一个，但最好放在__init__里）
+                # 检查plate_recognizer是否已初始化
                 if not hasattr(self, "plate_recognizer"):
                     from plate_recognizer import PlateRecognitionModel
                     self.plate_recognizer = PlateRecognitionModel()
@@ -120,7 +118,7 @@ class OCRUtil:
         except Exception as e:
             return "未识别车牌", f"识别失败：{str(e)}"
 
-    # 手动录入车牌（最终备用方案）- 完全保留你原有逻辑
+    # 手动录入车牌（最终备用方案）
     def manual_input_plate(self, parent_window):
         """手动录入车牌，返回录入的车牌号码"""
         while True:
@@ -154,9 +152,9 @@ class OCRUtil:
     #     messagebox.showwarning(title="识别失败", message=f"{msg}，请手动录入车牌！")
     #     plate_num, msg = self.manual_input_plate(parent_window)
     #     return plate_num, msg
-# 测试用例（保留你原有测试，可直接运行验证）
+# 测试用例
 if __name__ == "__main__":
     ocr_util = OCRUtil()
-    # 测试识别car4.jpg（可替换为car5/6/7测试）
+    # 测试识别car4.jpg
     plate, msg = ocr_util.baidu_ocr_recognize("./file/car6.png")
     print(msg)

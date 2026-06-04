@@ -262,7 +262,7 @@ class DataUtil:
     def __init__(self):
         self.host = "localhost"
         self.user = "root"
-        self.password = "123456"  # 改成你自己的密码
+        self.password = "123456"  # 数据库密码
         self.database = "parking_db"
         self.hour_rate = 2
 

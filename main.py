@@ -365,15 +365,36 @@ class ParkingSystem(tk.Tk):
             self.add_log(f"云端识别失败：{str(e)}")
             messagebox.showerror("错误", f"云端识别异常：{str(e)}")
 
+    # def manual_input(self):
+    #     plate_num, msg = self.ocr_util.manual_input_plate(self)
+    #     if plate_num:
+    #         self.current_plate.set(plate_num)
+    #         self.add_log(msg)
+    #         self.entry_btn.config(state=tk.NORMAL)
+    #         self.exit_btn.config(state=tk.NORMAL)
+    #         if self.current_img_path:
+    #             self.show_image_preview(self.current_img_path, plate_num)
     def manual_input(self):
-        plate_num, msg = self.ocr_util.manual_input_plate(self)
-        if plate_num:
+        # 👇 关键：获取当前已经识别的车牌
+        current_plate_text = self.current_plate.get()
+
+        # 调用弹窗，默认值 = 当前识别结果
+        plate_num = tk.simpledialog.askstring(
+            "手动录入车牌",
+            "请确认或修改车牌号码：",
+            initialvalue=current_plate_text  # 👈 预填充在这里
+        )
+
+        if plate_num and plate_num.strip():
+            plate_num = plate_num.strip()
             self.current_plate.set(plate_num)
-            self.add_log(msg)
+            self.add_log(f"手动录入成功：{plate_num}")
             self.entry_btn.config(state=tk.NORMAL)
             self.exit_btn.config(state=tk.NORMAL)
             if self.current_img_path:
                 self.show_image_preview(self.current_img_path, plate_num)
+        else:
+            self.add_log("手动录入已取消")
 
     def car_entry(self):
         plate_num = self.current_plate.get()
